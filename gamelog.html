@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sense Game Log</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f5f5f7; color: #1d1d1f; }
+.header { background: #fff; border-bottom: 1px solid #d2d2d7; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+.header h1 { font-size: 20px; font-weight: 600; }
+.header .mode-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px; color: #fff; }
+.badge-devnet { background: #8b5cf6; }
+.badge-preview { background: #34c759; }
+.header .refresh-btn { background: #007aff; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.header .refresh-btn:hover { background: #0056cc; }
+.auto-label { font-size: 11px; color: #86868b; margin-left: 8px; }
+
+.alert-box { background: #fff2f0; border: 1px solid #ff3b30; border-radius: 12px; padding: 14px 18px; margin: 16px 24px 0; }
+.alert-box h3 { color: #ff3b30; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.alert-box p { font-size: 12px; color: #86868b; line-height: 1.5; }
+.alert-box code { background: #f5f5f7; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #007aff; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 16px 24px; }
+.stat-card { background: #fff; border-radius: 12px; padding: 16px; border: 1px solid #d2d2d7; }
+.stat-card .label { font-size: 11px; font-weight: 600; color: #86868b; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+.stat-card .sub { font-size: 12px; color: #86868b; margin-top: 2px; }
+.green { color: #34c759; }
+.red { color: #ff3b30; }
+.blue { color: #007aff; }
+.orange { color: #ff9500; }
+.purple { color: #8b5cf6; }
+
+.section { padding: 0 24px 16px; }
+.section h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #1d1d1f; }
+.section .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.section .tabs button { background: #e5e5ea; border: none; padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: 600; cursor: pointer; color: #1d1d1f; }
+.section .tabs button.active { background: #007aff; color: #fff; }
+
+.table-wrap { background: #fff; border-radius: 12px; border: 1px solid #d2d2d7; overflow: hidden; max-height: 600px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #f5f5f7; font-weight: 600; text-align: left; padding: 8px 10px; position: sticky; top: 0; color: #86868b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; border-bottom: 1px solid #d2d2d7; }
+td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+tr:hover { background: #f5f5f7; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.badge-win { background: #d1fae5; color: #059669; }
+.badge-loss { background: #fee2e2; color: #dc2626; }
+.badge-draw { background: #fef3c7; color: #d97706; }
+.badge-open { background: #dbeafe; color: #2563eb; }
+.badge-matched { background: #e0e7ff; color: #4f46e5; }
+.badge-settled { background: #d1fae5; color: #059669; }
+.badge-expired { background: #f3f4f6; color: #6b7280; }
+.badge-settling { background: #fef3c7; color: #d97706; }
+.badge-locked { background: #fee2e2; color: #dc2626; }
+.badge-cancelled { background: #f3f4f6; color: #6b7280; }
+.badge-free { background: #f3f4f6; color: #6b7280; }
+.badge-paid { background: #dbeafe; color: #2563eb; }
+.mono { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; }
+.time-ago { color: #86868b; font-size: 11px; }
+.wallet { font-family: 'SF Mono', Monaco, monospace; font-size: 10px; color: #86868b; }
+.tx-link { color: #007aff; text-decoration: none; font-size: 11px; font-weight: 600; }
+.tx-link:hover { text-decoration: underline; }
+.no-tx { color: #d2d2d7; font-size: 11px; }
+
+.events-log { background: #fff; border-radius: 12px; border: 1px solid #d2d2d7; padding: 12px; max-height: 300px; overflow-y: auto; font-family: 'SF Mono', Monaco, monospace; font-size: 11px; line-height: 1.6; }
+.event-line { display: flex; gap: 8px; }
+.event-time { color: #86868b; flex-shrink: 0; }
+.event-msg { color: #1d1d1f; }
+.event-msg.create { color: #007aff; }
+.event-msg.join { color: #34c759; }
+.event-msg.settle { color: #8b5cf6; }
+.event-msg.expire { color: #ff9500; }
+.event-msg.error { color: #ff3b30; }
+.event-msg.queue { color: #86868b; }
+
+.filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-row input { padding: 6px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 12px; width: 200px; }
+.filter-row select { padding: 6px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 12px; background: #fff; }
+
+.view-toggle { display: flex; gap: 0; margin-bottom: 12px; border: 1px solid #d2d2d7; border-radius: 8px; overflow: hidden; width: fit-content; }
+.view-toggle button { background: #fff; border: none; border-right: 1px solid #d2d2d7; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; color: #86868b; }
+.view-toggle button:last-child { border-right: none; }
+.view-toggle button.active { background: #007aff; color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1 id="pageTitle">Sense Game Log</h1>
+    <span class="mode-badge" id="modeBadge"></span>
+  </div>
+  <div style="display:flex;align-items:center">
+    <button class="refresh-btn" onclick="loadAll()">Refresh</button>
+    <span class="auto-label" id="autoLabel">Auto-refresh: 10s</span>
+  </div>
+</div>
+
+<div id="alertArea"></div>
+<div class="grid" id="statsGrid"></div>
+
+<div class="section">
+  <h2>Live Event Log</h2>
+  <div class="events-log" id="eventsLog">Loading...</div>
+</div>
+
+<div class="section">
+  <h2>Queue State</h2>
+  <div class="tabs">
+    <button class="active" onclick="showQueueTab('open',this)">Open</button>
+    <button onclick="showQueueTab('matched',this)">Matched</button>
+    <button onclick="showQueueTab('recent',this)">Recent Queue</button>
+  </div>
+  <div class="table-wrap" id="queueTable">Loading...</div>
+</div>
+
+<div class="section">
+  <h2>Game History</h2>
+  <div class="view-toggle" id="viewToggle">
+    <button class="active" onclick="setView('matches',this)">Matches</button>
+    <button onclick="setView('onchain',this)">On-Chain TXs</button>
+  </div>
+  <div class="filter-row">
+    <input type="text" id="matchFilter" placeholder="Filter by player or wallet..." oninput="renderCurrentView()">
+    <select id="modeFilter" onchange="renderCurrentView()">
+      <option value="">All modes</option>
+      <option value="free">Free</option>
+      <option value="paid">Paid</option>
+    </select>
+    <select id="resultFilter" onchange="renderCurrentView()">
+      <option value="">All results</option>
+      <option value="win">Wins</option>
+      <option value="loss">Losses</option>
+      <option value="draw">Draws</option>
+    </select>
+    <select id="statusFilter" onchange="renderCurrentView()" style="display:none">
+      <option value="">All statuses</option>
+      <option value="Settled">Settled</option>
+      <option value="Cancelled">Cancelled</option>
+      <option value="Funds Locked">Funds Locked</option>
+      <option value="Matched">Matched</option>
+    </select>
+  </div>
+  <div class="table-wrap" id="gameTable">Loading...</div>
+</div>
+
+<script>
+// ── Config ──
+const SCAN = 'https://solscan.io/tx/';
+const CLUSTER = '?cluster=devnet';
+const DEVNET_API = 'https://web-production-8866e.up.railway.app';
+const PREVIEW_API = 'https://web-production-c6ec6.up.railway.app';
+
+// Auto-detect: if filename contains 'devnet' or URL param
+const isDevnet = location.pathname.includes('devnet') || location.hostname.includes('devnet') ||
+  new URLSearchParams(location.search).get('mode') === 'devnet' ||
+  document.referrer.includes('devnet');
+// Check which repo we're on
+const onDevnetRepo = location.hostname === 'dogmomhq.github.io' && location.pathname.startsWith('/sense-react-devnet');
+const SERVER = (isDevnet || onDevnetRepo) ? DEVNET_API : PREVIEW_API;
+
+let dashData = null;
+let queueData = null;
+let onchainGames = [];
+let currentQueueTab = 'open';
+let currentView = 'matches';
+
+// ── Init ──
+(function init() {
+  const badge = document.getElementById('modeBadge');
+  const title = document.getElementById('pageTitle');
+  if (isDevnet || onDevnetRepo) {
+    badge.textContent = 'SOLANA / DEVNET';
+    badge.classList.add('badge-devnet');
+    title.textContent = 'Sense Devnet — Game Log';
+    document.title = 'Sense Devnet Game Log';
+  } else {
+    badge.textContent = 'FIAT / PREVIEW';
+    badge.classList.add('badge-preview');
+    title.textContent = 'Sense Preview — Game Log';
+    document.title = 'Sense Preview Game Log';
+  }
+})();
+
+// ── Helpers ──
+function timeAgo(ts) {
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function shortWallet(w) { return w ? w.slice(0,4) + '..' + w.slice(-4) : '—'; }
+function formatAmt(raw) { return (Number(raw) / 1000000).toFixed(2); }
+
+function txLink(hash, label) {
+  if (!hash) return '<span class="no-tx">—</span>';
+  return '<a class="tx-link" href="' + SCAN + hash + CLUSTER + '" target="_blank">' + (label || hash.slice(0,8) + '..') + '</a>';
+}
+
+function statusBadge(s) {
+  const map = { open:'badge-open', matched:'badge-matched', settled:'badge-settled', expired:'badge-expired', settling:'badge-settling',
+    Settled:'badge-settled', Cancelled:'badge-cancelled', 'Funds Locked':'badge-locked', Matched:'badge-matched' };
+  return '<span class="badge ' + (map[s]||'') + '">' + (typeof s === 'string' ? s.toUpperCase() : s) + '</span>';
+}
+
+function resultBadge(r) {
+  const map = { win:'badge-win', loss:'badge-loss', draw:'badge-draw' };
+  return '<span class="badge ' + (map[r]||'') + '">' + (r||'').toUpperCase() + '</span>';
+}
+
+function modeBadge(m) {
+  return '<span class="badge ' + (m === 'paid' ? 'badge-paid' : 'badge-free') + '">' + (m||'free').toUpperCase() + '</span>';
+}
+
+// ── Data ──
+async function loadAll() {
+  try {
+    const [dashResp, queueResp] = await Promise.all([
+      fetch(SERVER + '/api/dashboard'),
+      fetch(SERVER + '/api/debug/queue'),
+    ]);
+    dashData = await dashResp.json();
+    queueData = await queueResp.json();
+    onchainGames = processMovements(dashData);
+    renderStats();
+    renderAlerts();
+    renderEvents();
+    renderQueue();
+    renderCurrentView();
+    document.getElementById('autoLabel').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('autoLabel').textContent = 'Error: ' + e.message;
+  }
+}
+
+function processMovements(data) {
+  var movements = (data.gameMovements || []).concat(data.recentMovements || []);
+  var seen = {}, unique = [];
+  movements.forEach(function(m) { if (!seen[m.id]) { seen[m.id] = true; unique.push(m); } });
+
+  var gamesMap = {};
+  unique.forEach(function(m) {
+    var gid = m.game_id;
+    if (!gamesMap[gid]) gamesMap[gid] = { create: [], join: [], settle: [], settle_draw: [], cancel: [] };
+    var bucket = gamesMap[gid][m.type];
+    if (bucket) bucket.push(m);
+  });
+
+  var games = [];
+  Object.keys(gamesMap).sort().reverse().forEach(function(gid) {
+    var txs = gamesMap[gid];
+    var cr = txs.create[0], jo = txs.join[0];
+    var se = txs.settle[0] || txs.settle_draw[0];
+    var ca = txs.cancel[0];
+    var status = se ? 'Settled' : (ca ? 'Cancelled' : (jo ? 'Matched' : (cr ? 'Funds Locked' : 'Unknown')));
+    games.push({
+      g: gid, s: status,
+      a: cr ? cr.wallet : '', b: jo ? jo.wallet : '',
+      ct: cr ? cr.tx_hash : '', jt: jo ? jo.tx_hash : '',
+      st: se ? se.tx_hash : '', xt: ca ? ca.tx_hash : '',
+      amt: cr ? cr.amount_raw : '0',
+      tm: cr ? cr.created_at : ''
+    });
+  });
+  return games;
+}
+
+// ── Render ──
+function renderStats() {
+  const t = dashData.totals;
+  const q = dashData.queue;
+  const s = dashData.server;
+  const r = dashData.resultDistribution;
+
+  const locked = onchainGames.filter(g => g.s === 'Funds Locked');
+  const lockedAmt = locked.reduce((sum, g) => sum + Number(g.amt), 0);
+
+  let html = `
+    <div class="stat-card">
+      <div class="label">Total Games</div>
+      <div class="value">${t.totalGames}</div>
+      <div class="sub">${t.gamesToday} today · ${t.gamesLastHour} last hour</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Queue</div>
+      <div class="value ${q.openWaiting > 0 ? 'blue' : ''}">${q.openWaiting} open</div>
+      <div class="sub">${q.activeMatched} matched · ${q.settling} settling</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Players</div>
+      <div class="value">${t.uniquePlayers}</div>
+      <div class="sub">${s.wsConnections} connected now</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Results</div>
+      <div class="value green">${r.wins}W</div>
+      <div class="sub">${r.draws}D · ${r.losses}L</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Wagered</div>
+      <div class="value">$${(t.totalWageredCents / 100).toFixed(2)}</div>
+      <div class="sub">${t.paidGames} paid · ${t.freeGames} free</div>
+    </div>`;
+
+  if (locked.length > 0) {
+    html += `
+    <div class="stat-card">
+      <div class="label">Funds Locked</div>
+      <div class="value red">${locked.length}</div>
+      <div class="sub">$${formatAmt(lockedAmt)} USDC orphaned</div>
+    </div>`;
+  }
+
+  html += `
+    <div class="stat-card">
+      <div class="label">On-Chain Games</div>
+      <div class="value purple">${onchainGames.length}</div>
+      <div class="sub">${onchainGames.filter(g=>g.s==='Settled').length} settled · ${onchainGames.filter(g=>g.s==='Cancelled').length} cancelled</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Server</div>
+      <div class="value">${Math.floor(s.uptime / 60)}m</div>
+      <div class="sub">${s.memoryMB}MB RAM · ${s.settleErrors.length} errors</div>
+    </div>`;
+
+  document.getElementById('statsGrid').innerHTML = html;
+}
+
+function renderAlerts() {
+  const locked = onchainGames.filter(g => g.s === 'Funds Locked');
+  const el = document.getElementById('alertArea');
+  if (locked.length === 0) { el.innerHTML = ''; return; }
+  const lockedAmt = locked.reduce((sum, g) => sum + Number(g.amt), 0);
+  el.innerHTML = `<div class="alert-box">
+    <h3>${locked.length} Games with Orphaned Funds</h3>
+    <p>These games have USDC locked on-chain (create TX exists) but no settle or cancel TX. 
+    The DB expired them but the on-chain vaults still hold funds. 
+    They need manual <code>cancel_game</code> or <code>claim_timeout</code> calls to recover $${formatAmt(lockedAmt)} USDC.</p>
+  </div>`;
+}
+
+function renderEvents() {
+  const events = dashData.server.recentEvents || [];
+  const el = document.getElementById('eventsLog');
+  if (!events.length) { el.innerHTML = '<div style="color:#86868b">No recent events</div>'; return; }
+  el.innerHTML = events.slice().reverse().map(e => {
+    let cls = 'queue';
+    const msg = e.msg || '';
+    if (msg.startsWith('CREATED')) cls = 'create';
+    else if (msg.startsWith('JOINED')) cls = 'join';
+    else if (msg.startsWith('SETTLED') || msg.startsWith('SETTLE')) cls = 'settle';
+    else if (msg.startsWith('EXPIRED') || msg.startsWith('STALE')) cls = 'expire';
+    else if (msg.startsWith('ERROR') || msg.startsWith('CHAIN_FAIL')) cls = 'error';
+    const time = e.t ? e.t.substring(11, 19) : '';
+    return `<div class="event-line"><span class="event-time">${time}</span><span class="event-msg ${cls}">${msg}</span></div>`;
+  }).join('');
+}
+
+function showQueueTab(tab, btn) {
+  currentQueueTab = tab;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderQueue();
+}
+
+function renderQueue() {
+  const el = document.getElementById('queueTable');
+  if (currentQueueTab === 'open') {
+    const open = queueData?.open || [];
+    if (!open.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#86868b">No open games</div>'; return; }
+    el.innerHTML = `<table><tr><th>Match ID</th><th>Tier</th><th>Player A</th><th>Created</th></tr>
+      ${open.map(g => `<tr><td class="mono">${g.match_id}</td><td>${g.tier}</td><td>${g.player_a}</td><td class="time-ago">${timeAgo(g.created_at)}</td></tr>`).join('')}</table>`;
+  } else if (currentQueueTab === 'matched') {
+    const matched = (dashData.recentQueue || []).filter(q => q.status === 'matched');
+    if (!matched.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#86868b">No matched games</div>'; return; }
+    el.innerHTML = `<table><tr><th>Match ID</th><th>Tier</th><th>Player A</th><th>Player B</th><th>A Ans</th><th>B Ans</th><th>Matched</th></tr>
+      ${matched.map(g => `<tr><td class="mono">${g.match_id}</td><td>${g.tier}</td><td>${g.player_a}</td><td>${g.player_b||'—'}</td>
+      <td>${g.answer_a !== null ? g.answer_a : '—'}</td><td>${g.answer_b !== null ? g.answer_b : '—'}</td>
+      <td class="time-ago">${timeAgo(g.matched_at)}</td></tr>`).join('')}</table>`;
+  } else {
+    const recent = (dashData.recentQueue || []).slice(0, 50);
+    el.innerHTML = `<table><tr><th>Match</th><th>Status</th><th>Tier</th><th>Player A</th><th>Player B</th><th>A Time</th><th>B Time</th><th>Created</th></tr>
+      ${recent.map(g => `<tr><td class="mono">${g.match_id}</td><td>${statusBadge(g.status)}</td><td>${g.tier}</td>
+      <td>${g.player_a}</td><td>${g.player_b||'—'}</td>
+      <td>${g.time_a !== null ? g.time_a + 'ms' : '—'}</td><td>${g.time_b !== null ? g.time_b + 'ms' : '—'}</td>
+      <td class="time-ago">${timeAgo(g.created_at)}</td></tr>`).join('')}</table>`;
+  }
+}
+
+// ── View Toggle ──
+function setView(view, btn) {
+  currentView = view;
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Show/hide appropriate filters
+  document.getElementById('resultFilter').style.display = view === 'matches' ? '' : 'none';
+  document.getElementById('modeFilter').style.display = view === 'matches' ? '' : 'none';
+  document.getElementById('statusFilter').style.display = view === 'onchain' ? '' : 'none';
+  renderCurrentView();
+}
+
+function renderCurrentView() {
+  if (currentView === 'matches') renderMatches();
+  else renderOnChain();
+}
+
+function renderMatches() {
+  const el = document.getElementById('gameTable');
+  let matches = dashData?.recentMatches || [];
+
+  const nameFilter = document.getElementById('matchFilter').value.toLowerCase();
+  const modeFilter = document.getElementById('modeFilter').value;
+  const resultFilter = document.getElementById('resultFilter').value;
+
+  if (nameFilter) matches = matches.filter(m =>
+    (m.player_a||'').toLowerCase().includes(nameFilter) ||
+    (m.player_b||'').toLowerCase().includes(nameFilter) ||
+    (m.wallet_a||'').toLowerCase().includes(nameFilter) ||
+    (m.wallet_b||'').toLowerCase().includes(nameFilter)
+  );
+  if (modeFilter) matches = matches.filter(m => m.mode === modeFilter);
+  if (resultFilter) matches = matches.filter(m => m.result_a === resultFilter || m.result_b === resultFilter);
+
+  if (!matches.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#86868b">No matches found</div>'; return; }
+
+  el.innerHTML = `<table>
+    <tr><th>Match</th><th>Mode</th><th>Player A</th><th>Wallet A</th><th>Result</th><th>Player B</th><th>Wallet B</th><th>Result</th><th>A Time</th><th>B Time</th><th>Wager</th><th>Reason</th><th>Settled</th></tr>
+    ${matches.map(m => `<tr>
+      <td class="mono">${m.match_id}</td>
+      <td>${modeBadge(m.mode)}</td>
+      <td>${m.player_a}</td>
+      <td class="wallet" title="${m.wallet_a||''}">${shortWallet(m.wallet_a)}</td>
+      <td>${resultBadge(m.result_a)}</td>
+      <td>${m.player_b}</td>
+      <td class="wallet" title="${m.wallet_b||''}">${shortWallet(m.wallet_b)}</td>
+      <td>${resultBadge(m.result_b)}</td>
+      <td class="mono">${m.time_a !== null ? m.time_a + 'ms' : '—'}</td>
+      <td class="mono">${m.time_b !== null ? m.time_b + 'ms' : '—'}</td>
+      <td>$${(m.wager_cents / 100).toFixed(2)}</td>
+      <td style="font-size:11px;color:#86868b">${m.reason||'—'}</td>
+      <td class="time-ago">${timeAgo(m.settled_at)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderOnChain() {
+  const el = document.getElementById('gameTable');
+  let games = onchainGames;
+
+  const nameFilter = document.getElementById('matchFilter').value.toLowerCase();
+  const statusFilter = document.getElementById('statusFilter').value;
+
+  if (nameFilter) games = games.filter(g =>
+    g.a.toLowerCase().includes(nameFilter) || g.b.toLowerCase().includes(nameFilter) || g.g.toLowerCase().includes(nameFilter)
+  );
+  if (statusFilter) games = games.filter(g => g.s === statusFilter);
+
+  if (!games.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#86868b">No on-chain games found</div>'; return; }
+
+  el.innerHTML = `<table>
+    <tr><th>Game ID</th><th>Status</th><th>Amount</th><th>Player A</th><th>Create TX</th><th>Player B</th><th>Join TX</th><th>Settle / Cancel</th><th>Time</th></tr>
+    ${games.map(g => `<tr>
+      <td class="mono">${g.g}</td>
+      <td>${statusBadge(g.s)}</td>
+      <td style="font-weight:600">$${formatAmt(g.amt)}</td>
+      <td class="wallet" title="${g.a}">${shortWallet(g.a)}</td>
+      <td>${txLink(g.ct, 'Create')}</td>
+      <td class="wallet" title="${g.b}">${shortWallet(g.b)}</td>
+      <td>${txLink(g.jt, 'Join')}</td>
+      <td>${g.st ? txLink(g.st, 'Settle') : (g.xt ? txLink(g.xt, 'Cancel') : '<span class="no-tx">—</span>')}</td>
+      <td class="time-ago">${timeAgo(g.tm)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+// ── Auto-refresh ──
+loadAll();
+setInterval(loadAll, 10000);
+</script>
+</body>
+</html>

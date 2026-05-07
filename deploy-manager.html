@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sense — Deploy Manager</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1520; color: #ccdde8; font-family: system-ui, -apple-system, sans-serif; padding: 16px; }
+h1 { font-size: 18px; color: #44ccdd; margin-bottom: 4px; }
+.subtitle { font-size: 11px; color: #667788; margin-bottom: 16px; }
+.repo-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.repo-tab { padding: 8px 16px; background: #1a2a3a; border: 1px solid #2a3a4a; border-radius: 6px; color: #8899aa; cursor: pointer; font-size: 12px; }
+.repo-tab.active { border-color: #44ccdd; color: #44ccdd; font-weight: 600; }
+.current-version { background: #1a2a3a; border: 1px solid #2a3a4a; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.current-label { font-size: 10px; color: #44ccdd; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.current-files { font-size: 11px; color: #8899aa; font-family: monospace; }
+.deploy-list { display: flex; flex-direction: column; gap: 6px; }
+.deploy-item { background: #1a2332; border: 1px solid #2a3a4a; border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: all 0.2s; }
+.deploy-item:hover { border-color: #44ccdd; }
+.deploy-item.active-version { border-color: #00d4aa; background: rgba(0,212,170,0.05); }
+.deploy-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.deploy-msg { font-size: 12px; color: #ccdde8; font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deploy-time { font-size: 10px; color: #667788; white-space: nowrap; }
+.deploy-files { font-size: 10px; color: #556677; font-family: monospace; margin-top: 4px; }
+.deploy-actions { margin-top: 8px; display: none; }
+.deploy-item.expanded .deploy-actions { display: flex; gap: 8px; }
+.btn { padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border: none; }
+.btn-revert { background: #ff4757; color: white; }
+.btn-revert:hover { background: #ff6b81; }
+.btn-preview { background: #1a2a3a; border: 1px solid #44ccdd; color: #44ccdd; }
+.btn-preview:hover { background: #44ccdd; color: #0d1520; }
+.badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.badge-live { background: rgba(0,212,170,0.15); color: #00d4aa; }
+.badge-old { background: rgba(102,119,136,0.15); color: #667788; }
+.loading { text-align: center; color: #667788; padding: 40px; font-size: 12px; }
+.status-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 16px; background: #111d2b; border-top: 1px solid #2a3a4a; font-size: 11px; color: #667788; display: none; }
+.status-bar.show { display: block; }
+.status-bar.success { color: #00d4aa; }
+.status-bar.error { color: #ff4757; }
+</style>
+</head><body>
+<h1>SENSE Deploy Manager</h1>
+<p class="subtitle">View every deployment, click to expand, revert with one click</p>
+
+<div class="repo-tabs">
+  <div class="repo-tab active" data-repo="dogmomhq/sense-react-preview" onclick="switchRepo(this)">Preview</div>
+  <div class="repo-tab" data-repo="dogmomhq/sense-react-devnet" onclick="switchRepo(this)">Devnet</div>
+</div>
+
+<div class="current-version" id="current-version">
+  <div class="current-label">Currently Live</div>
+  <div class="current-files" id="current-files">Loading...</div>
+</div>
+
+<div class="deploy-list" id="deploy-list">
+  <div class="loading">Loading deploy history...</div>
+</div>
+
+<div class="status-bar" id="status-bar"></div>
+
+<script>
+// Token loaded from URL hash or prompt — never hardcoded
+let TOKEN = window.location.hash.slice(1) || sessionStorage.getItem('gh_token') || '';
+if (!TOKEN) {
+  TOKEN = prompt('Enter GitHub token to load deploy history:') || '';
+  if (TOKEN) sessionStorage.setItem('gh_token', TOKEN);
+}
+if (!TOKEN) { document.body.innerHTML = '<p style="color:#ff4757;padding:40px;text-align:center">No token provided. Reload and enter your GitHub token.</p>'; throw new Error('no token'); }
+const HEADERS = { 'Authorization': `token ${TOKEN}`, 'User-Agent': 'SenseDeployManager' };
+let currentRepo = 'dogmomhq/sense-react-preview';
+let currentIndexHtml = '';
+let deployGroups = [];
+
+function switchRepo(el) {
+  document.querySelectorAll('.repo-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentRepo = el.dataset.repo;
+  loadDeploys();
+}
+
+async function api(url) {
+  const r = await fetch(url, { headers: HEADERS });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
+function toEST(utc) {
+  const d = new Date(utc);
+  return d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function extractAssets(html) {
+  const js = html.match(/assets\/(index-[^"]+\.js)/);
+  const css = html.match(/assets\/(index-[^"]+\.css)/);
+  return { js: js ? js[1] : null, css: css ? css[1] : null };
+}
+
+async function loadDeploys() {
+  const list = document.getElementById('deploy-list');
+  list.innerHTML = '<div class="loading">Loading deploy history...</div>';
+
+  try {
+    // Get current index.html
+    const currentFile = await api(`https://api.github.com/repos/${currentRepo}/contents/index.html`);
+    currentIndexHtml = atob(currentFile.content);
+    const currentAssets = extractAssets(currentIndexHtml);
+    document.getElementById('current-files').textContent = `JS: ${currentAssets.js || '?'}  |  CSS: ${currentAssets.css || '?'}`;
+
+    // Get commits (2 pages = 100 commits)
+    const page1 = await api(`https://api.github.com/repos/${currentRepo}/commits?per_page=50&page=1`);
+    const page2 = await api(`https://api.github.com/repos/${currentRepo}/commits?per_page=50&page=2`);
+    const allCommits = [...page1, ...page2];
+
+    // Group commits into "deploys" — each unique index.html is a deploy version
+    deployGroups = [];
+    const seenHtml = new Set();
+
+    for (const commit of allCommits) {
+      const sha = commit.sha;
+      const msg = commit.commit.message.split('\n')[0];
+      const date = commit.commit.committer.date;
+
+      // Get tree to find index.html
+      try {
+        const commitData = await api(`https://api.github.com/repos/${currentRepo}/git/commits/${sha}`);
+        const tree = await api(`https://api.github.com/repos/${currentRepo}/git/trees/${commitData.tree.sha}?recursive=1`);
+
+        const indexItem = tree.tree.find(t => t.path === 'index.html');
+        if (!indexItem || seenHtml.has(indexItem.sha)) continue;
+        seenHtml.add(indexItem.sha);
+
+        // Get index.html content to extract asset names
+        const blob = await api(`https://api.github.com/repos/${currentRepo}/git/blobs/${indexItem.sha}`);
+        const html = atob(blob.content);
+        const assets = extractAssets(html);
+
+        // Find these assets in the tree
+        const assetFiles = tree.tree.filter(t => t.path.startsWith('assets/'));
+        const hasJs = assets.js && assetFiles.some(a => a.path === `assets/${assets.js}`);
+        const hasCss = assets.css && assetFiles.some(a => a.path === `assets/${assets.css}`);
+
+        deployGroups.push({
+          sha, msg, date, html,
+          js: assets.js, css: assets.css,
+          hasJs, hasCss,
+          treeSha: commitData.tree.sha,
+          isLive: html === currentIndexHtml,
+          commitSha: sha,
+        });
+      } catch (e) { /* skip */ }
+    }
+
+    renderDeploys();
+  } catch (e) {
+    list.innerHTML = `<div class="loading" style="color:#ff4757">Error: ${e.message}</div>`;
+  }
+}
+
+function renderDeploys() {
+  const list = document.getElementById('deploy-list');
+  if (deployGroups.length === 0) {
+    list.innerHTML = '<div class="loading">No deploys found</div>';
+    return;
+  }
+
+  list.innerHTML = deployGroups.map((d, i) => `
+    <div class="deploy-item ${d.isLive ? 'active-version' : ''}" onclick="toggleExpand(this, ${i})">
+      <div class="deploy-row">
+        <span class="deploy-msg">${escHtml(d.msg)}</span>
+        <span class="deploy-time">${toEST(d.date)}</span>
+        ${d.isLive ? '<span class="badge badge-live">LIVE</span>' : ''}
+      </div>
+      <div class="deploy-files">
+        JS: ${d.js || '—'} ${d.hasJs ? '' : '(deleted)'}
+        &nbsp;|&nbsp; CSS: ${d.css || '—'} ${d.hasCss ? '' : '(deleted)'}
+      </div>
+      <div class="deploy-actions">
+        ${d.isLive ? '<span style="font-size:11px;color:#00d4aa">This is the current live version</span>' :
+          (d.hasJs && d.hasCss ?
+            `<button class="btn btn-revert" onclick="event.stopPropagation(); revertTo(${i})">Revert to This Version</button>` :
+            '<span style="font-size:11px;color:#ff4757">Assets deleted — cannot revert (files no longer in repo)</span>'
+          )}
+      </div>
+    </div>
+  `).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleExpand(el, idx) {
+  el.classList.toggle('expanded');
+}
+
+function showStatus(msg, type) {
+  const bar = document.getElementById('status-bar');
+  bar.textContent = msg;
+  bar.className = `status-bar show ${type}`;
+  if (type === 'success') setTimeout(() => bar.classList.remove('show'), 5000);
+}
+
+async function revertTo(idx) {
+  const d = deployGroups[idx];
+  if (!confirm(`Revert to:\n${d.msg}\n(${toEST(d.date)})\n\nThis will update the LIVE site immediately.`)) return;
+
+  showStatus('Reverting...', '');
+
+  try {
+    // Get the tree at this commit to find the actual file blobs
+    const tree = await api(`https://api.github.com/repos/${currentRepo}/git/trees/${d.treeSha}?recursive=1`);
+
+    // Get blobs for index.html, JS, and CSS
+    const files = [
+      { path: 'index.html', content: null },
+      { path: `assets/${d.js}`, content: null },
+      { path: `assets/${d.css}`, content: null },
+    ];
+
+    for (const f of files) {
+      const item = tree.tree.find(t => t.path === f.path);
+      if (!item) throw new Error(`File ${f.path} not found in tree`);
+      const blob = await api(`https://api.github.com/repos/${currentRepo}/git/blobs/${item.sha}`);
+      f.content = blob.content; // already base64
+    }
+
+    // Upload each file
+    for (const f of files) {
+      // Get current SHA if file exists
+      let sha = null;
+      try {
+        const existing = await api(`https://api.github.com/repos/${currentRepo}/contents/${f.path}`);
+        sha = existing.sha;
+      } catch (e) { /* file doesn't exist yet */ }
+
+      const payload = {
+        message: `REVERT: restore ${f.path} from ${d.commitSha.slice(0,8)} (${d.msg.slice(0,40)})`,
+        content: f.content,
+      };
+      if (sha) payload.sha = sha;
+
+      const r = await fetch(`https://api.github.com/repos/${currentRepo}/contents/${f.path}`, {
+        method: 'PUT',
+        headers: { ...HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(`Failed to upload ${f.path}: ${r.status}`);
+    }
+
+    showStatus(`Reverted to: ${d.msg} (${toEST(d.date)}) — refresh site in ~60s`, 'success');
+    setTimeout(loadDeploys, 2000);
+  } catch (e) {
+    showStatus(`Revert failed: ${e.message}`, 'error');
+  }
+}
+
+// Load on start
+loadDeploys();
+</script>
+</body></html>

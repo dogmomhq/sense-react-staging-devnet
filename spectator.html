@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sense — Live Spectator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1520; color: #ccdde8; font-family: system-ui, -apple-system, sans-serif; overflow-x: hidden; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #1a2a3a; flex-wrap: wrap; gap: 6px; }
+.header h1 { font-size: 15px; font-weight: 600; color: #44ccdd; }
+.controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.controls select, .controls button { background: #1a2a3a; border: 1px solid #2a3a4a; color: #ccdde8; padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.controls button:hover { border-color: #44ccdd; }
+.stats-bar { display: flex; gap: 16px; padding: 6px 16px; background: #111d2b; font-size: 10px; color: #667788; align-items: center; }
+.stats-bar span { color: #44ccdd; font-weight: 600; }
+.hint { font-size: 8px; color: #445566; margin-left: auto; }
+
+.grid { display: grid; gap: 6px; padding: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+/* Each bot tile wraps an iframe of the REAL game */
+.tile { position: relative; background: #1a2332; border: 1px solid #2a3a4a; border-radius: 8px; overflow: hidden; cursor: pointer; transition: all 0.3s; }
+.tile:hover { border-color: #44ccdd; }
+.tile.paused { opacity: 0.35; border-color: #ff4757; }
+.tile-label { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; padding: 3px 8px; background: rgba(13,21,32,0.85); border-bottom: 1px solid #2a3a4a; pointer-events: none; }
+.tile-name { font-size: 9px; color: #8899aa; font-family: monospace; }
+.tile-wager { font-size: 8px; color: #44ccdd; font-weight: 600; }
+.tile-badge { font-size: 7px; padding: 1px 5px; border-radius: 3px; font-weight: 600; background: rgba(0,212,170,0.15); color: #00d4aa; }
+.tile-badge.paused { background: rgba(255,71,87,0.2); color: #ff4757; }
+.tile iframe { width: 100%; height: 520px; border: none; pointer-events: none; /* bots auto-play, no manual clicks */ transform-origin: top left; }
+.pause-overlay { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(13,21,32,0.6); }
+.pause-overlay span { font-size: 28px; }
+</style>
+</head><body>
+<div class="header">
+  <h1>SENSE — Live Spectator</h1>
+  <div class="controls">
+    <select id="tier"><option value="4" selected>$0.10</option><option value="1">$1</option><option value="2">$10</option><option value="3">$100</option></select>
+    <button id="add-btn">+ Add Bot</button>
+    <button id="stop-btn" style="display:none">Stop All</button>
+  </div>
+</div>
+<div class="stats-bar">
+  Bots: <span id="st-count">0</span>
+  <span class="hint">Click tile to pause/resume · Each bot is the REAL game UI</span>
+</div>
+<div class="grid" id="grid">
+  <div style="grid-column:1/-1;text-align:center;color:#445566;padding:40px;font-size:12px">
+    Click "+ Add Bot" to launch a real game instance
+  </div>
+</div>
+
+<script>
+const NAMES = ['SwiftFox','BraveLion','QuickOwl','SlyWolf','CalmBear','BoldHawk','FastDeer','KeenEagle','WiseRaven','SharpTiger'];
+const TIERS = {4:'$0.10', 1:'$1', 2:'$10', 3:'$100'};
+const BASE_URL = window.location.origin + window.location.pathname.replace('spectator.html', '');
+let bots = [], bidx = 0;
+
+function genName() {
+  return NAMES[Math.random() * NAMES.length | 0] + (Math.random() * 90 + 10 | 0);
+}
+
+function addBot() {
+  if (bots.length >= 8) return; // 8 max — each is a full React app
+  const grid = document.getElementById('grid');
+  if (bidx === 0) grid.innerHTML = '';
+
+  const tier = parseInt(document.getElementById('tier').value);
+  const name = genName();
+  const idx = bidx++;
+  const paused = false;
+
+  // Create tile
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.id = 'tile-' + idx;
+
+  // Label overlay
+  const label = document.createElement('div');
+  label.className = 'tile-label';
+  label.innerHTML = `<span class="tile-name">${name} <span class="tile-wager">${TIERS[tier]}</span></span><span class="tile-badge" id="badge-${idx}">LIVE</span>`;
+
+  // Pause overlay (hidden initially)
+  const pauseOv = document.createElement('div');
+  pauseOv.className = 'pause-overlay';
+  pauseOv.style.display = 'none';
+  pauseOv.id = 'pause-' + idx;
+  pauseOv.innerHTML = '<span>⏸</span>';
+
+  // iframe with real game + bot params
+  const iframe = document.createElement('iframe');
+  iframe.src = `${BASE_URL}index.html?bot=true&tier=${tier}&name=${encodeURIComponent(name)}`;
+  iframe.id = 'frame-' + idx;
+
+  tile.appendChild(label);
+  tile.appendChild(pauseOv);
+  tile.appendChild(iframe);
+  grid.appendChild(tile);
+
+  const bot = { idx, name, tier, paused: false, iframe, tile };
+  bots.push(bot);
+
+  // Click to pause/resume
+  tile.addEventListener('click', () => {
+    bot.paused = !bot.paused;
+    const badge = document.getElementById('badge-' + idx);
+    const pov = document.getElementById('pause-' + idx);
+    if (bot.paused) {
+      tile.classList.add('paused');
+      badge.textContent = 'PAUSED';
+      badge.className = 'tile-badge paused';
+      pov.style.display = 'flex';
+      // Tell the iframe's bot to pause
+      try { iframe.contentWindow._botPause(); } catch(e) {}
+    } else {
+      tile.classList.remove('paused');
+      badge.textContent = 'LIVE';
+      badge.className = 'tile-badge';
+      pov.style.display = 'none';
+      try { iframe.contentWindow._botResume(); } catch(e) {}
+    }
+  });
+
+  document.getElementById('stop-btn').style.display = '';
+  document.getElementById('st-count').textContent = bots.length;
+}
+
+document.getElementById('add-btn').onclick = addBot;
+
+document.getElementById('stop-btn').onclick = () => {
+  // Remove all iframes (kills WS connections)
+  bots.forEach(b => {
+    try { b.iframe.src = 'about:blank'; } catch(e) {}
+    b.tile.remove();
+  });
+  bots = [];
+  bidx = 0;
+  document.getElementById('stop-btn').style.display = 'none';
+  document.getElementById('st-count').textContent = '0';
+  document.getElementById('grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#445566;padding:40px;font-size:12px">Stopped. Click + Add Bot to start again.</div>';
+};
+</script>
+</body></html>
